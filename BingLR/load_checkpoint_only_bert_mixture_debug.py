@@ -634,9 +634,9 @@ def main():
     j = 0
     if j == torch.distributed.get_rank():
         # word_embeddings
-        num_embeddings_per_partition = model.module.module.module.word_embeddings.num_embeddings_per_partition
-        embedding_dim = model.module.module.module.word_embeddings.embedding_dim
-        print(model.module.module.module.word_embeddings.weight)
-        
+        #num_embeddings_per_partition = model.module.module.module.word_embeddings.num_embeddings_per_partition
+        #embedding_dim = model.module.module.module.word_embeddings.embedding_dim
+        print(model.module.module.module.input_layernorm.bias.size())
+        print(d_binglr['bert.embeddings.LayerNorm.bias'].size()) 
 if __name__ == "__main__":
     main()

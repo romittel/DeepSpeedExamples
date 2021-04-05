@@ -1252,7 +1252,7 @@ class bert_iterator_dataset(data.IterableDataset):
 
     """
     def __init__(self, paths, max_seq_len=512, mask_lm_prob=.15, max_preds_per_seq=None, short_seq_prob=.01, tokenizer=None, train=False, num_urls=4, run_once=False,**kwargs):
-        super(bert_iterator_dataset, self).__init__()
+        super(binglr_iterator_dataset, self).__init__()
         self.train = train
         self.paths = paths
         random.shuffle(self.paths)
@@ -1311,12 +1311,9 @@ class bert_iterator_dataset(data.IterableDataset):
                     all_mask = []
                     all_mask_labels = []
                     all_pad_mask = []
-                    
                     ret = self.create_random_sentencepair(doc,self.num_urls, self.max_seq_len)
-                    
-                    
                     if ret is None:
-                        #print("ret is None")
+                        print("ret is None")
                         continue
                     else:
                         tokensa, tokensb, clickscores, hrsscores, sample_ids = ret
@@ -1352,8 +1349,7 @@ class bert_iterator_dataset(data.IterableDataset):
 
     def sample_sentences(self, sentences, sequence_length):
         sentences_lens = [len(sent) for sent in sentences]
-        taken_branch = -1
-        
+
         if random.random() < 0.5 or sum(sentences_lens) < sequence_length or len(sentences) < 3:
             start_index = 0
             end_index = 1
@@ -1369,7 +1365,6 @@ class bert_iterator_dataset(data.IterableDataset):
                 split_index = random.randint(start_index + 1, end_index - 1)
                 text_a = functools.reduce(lambda a,b : a+b, sentences[start_index : split_index])
                 text_b = functools.reduce(lambda a,b : a+b, sentences[split_index : end_index])
-            return text_a, text_b
         else:
             split_index = random.randint(1, len(sentences) - 2)
             setences_a = sentences[:split_index]
@@ -1397,38 +1392,36 @@ class bert_iterator_dataset(data.IterableDataset):
         #harslabel_str = "hrslabel"
         if len(doc) < num_urls:
             return None
-        click_scores = [float(0) for _ in doc]
+        click_scores = [float(0) for d in doc]
         sorted_indices = np.argsort(np.array(click_scores))
         selected_indices = [sorted_indices[-1]]
         if num_urls > 1:
             selected_indices.extend(np.random.choice(sorted_indices[:-1], size=num_urls - 1, replace=False).tolist())
         doc = [doc[i] for i in selected_indices]
+
         a = []
         b = []
 
         sample_ids = []
         clickscores = []
         hrsscores = []
-        
         for d in doc:
             sentences = d['sentences']
-            sentences = sentences.rstrip("]").lstrip("[").split("\",\"")
             sentences = [remove_control_char(sent.lower()) for sent in sentences]
-            if len(sentences) == 0 or len(sentences[0]) == 0:
-                return None
+            
             language = d['language']
             region = d['region']
             
             sample_id = d['sample_id'] if 'sample_id' in d else "0"
             
             tokenized_sentences = []
+            
             for sent in sentences:
                 tokenized_sent, _ = self.sentence_tokenize(sent)
                 tokenized_sentences.append(tokenized_sent)
-             
+            
             tokens_a0, tokens_b = self.sample_sentences(tokenized_sentences, max_seq_len - 3)
-            if len(tokens_a0) + len(tokens_b) == 0:
-                return None
+
             tokens_a = copy.copy(tokens_a0) + [self.tokenizer.get_language_token_id(language), self.tokenizer.get_region_token_id(region)]
             
             token_types_a = [0 for _ in range(len(tokens_a))]
@@ -1452,14 +1445,9 @@ class bert_iterator_dataset(data.IterableDataset):
         tokens_a, token_types_a, no_maked_indices_a = a
         tokens_b, token_types_b, no_maked_indices_b = b
         max_num_tokens = max_seq_len - 3
-        if (len(tokens_a) + len(tokens_b)) == 0:
+        if len(tokens_a) > max_num_tokens or (len(tokens_a) + len(tokens_b)) == 0:
             return None
-        elif len(tokens_a) > max_num_tokens:
-            tokens_a2 = list(tokens_a[:max_seq_len - 3])
-            token_types_a2 = list(token_types_a[:max_seq_len - 3])
-            tokens_b2 = []
-            token_types_b2 = []
-        elif len(tokens_a) + len(tokens_b) > max_num_tokens:
+        if len(tokens_a) + len(tokens_b) > max_num_tokens:
             tokens_a2 = list(tokens_a)
             token_types_a2 = list(token_types_a)
             tokens_b2 = list(tokens_b[:max_num_tokens - len(tokens_a)])
@@ -1469,8 +1457,6 @@ class bert_iterator_dataset(data.IterableDataset):
             token_types_a2 = token_types_a
             tokens_b2 = tokens_b
             token_types_b2 = token_types_b
-        if len(tokens_a2) + len(tokens_b2) == 0:
-            return None
         return (tokens_a2, token_types_a2, no_maked_indices_a), (tokens_b2, token_types_b2, no_maked_indices_b)
 
     def mask_token(self, idx, tokens, types, vocab_words, rng):

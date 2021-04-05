@@ -17,7 +17,7 @@ import os
 import math
 from typing import Iterable
 from .samplers import DistributedBatchSampler
-from .datasets import json_dataset, csv_dataset, split_ds, ConcatDataset, SplitDataset, bert_sentencepair_dataset, binglr_iterator_dataset, GPT2Dataset
+from .datasets import json_dataset, csv_dataset, split_ds, ConcatDataset, SplitDataset, bert_sentencepair_dataset, binglr_iterator_dataset, bert_iterator_dataset, GPT2Dataset
 from .lazy_loader import exists_lazy, make_lazy, lazy_array_loader
 from .tokenization import Tokenization, CommandToken, Tokenizer, CharacterLevelTokenizer, BertWordPieceTokenizer, GPT2BPETokenizer, BertSentencePieceTokenizer, make_tokenizer
 from . import corpora
@@ -78,7 +78,7 @@ class MyChainDataset(torch.utils.data.IterableDataset):
                 if x is not None:
                     flag = True
                     for k in x.keys():
-                        if (len(x[k].shape) == 2 and x[k].shape[-1] != 128) or (x[k].shape[0]==0):
+                        if len(x[k].shape) == 2 and x[k].shape[-1] != 128:
                             flag = False
                     if flag:
                         yield x
@@ -93,6 +93,30 @@ class MyChainDataset(torch.utils.data.IterableDataset):
             # Cannot verify that all self.datasets are Sized
             total += len(d)  # type: ignore
         return total
+
+class MyChainDataset0(torch.utils.data.IterableDataset):
+    def __init__(self, datasets: Iterable[torch.utils.data.Dataset]) -> None:
+        super(MyChainDataset0, self).__init__()
+        self.datasets = datasets
+    def __iter__(self):
+        for d in self.datasets:
+            for x in d:
+                if x is not None:
+                    flag = True
+                    for k in x.keys():
+                        if len(x[k].shape) == 1 and x[k].shape[0] == 0:
+                            flag = False
+                    if flag:
+                        yield x
+                else:
+                    break
+    def __len__(self):
+        total = 0
+        for d in self.datasets:
+            assert isinstance(d, torch.utils.data.IterableDataset), "ChainDataset only supports IterableDataset"
+            total += len(d) 
+        return total
+
 
 def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=None, split=[1.],
                 delim=',', loose=False, binarize_sent=False, drop_unlabeled=False, tokenizer=None,
@@ -129,7 +153,7 @@ def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=N
         path = [os.path.join(path[0], f) for f in os.listdir(path[0]) if not os.path.isdir(os.path.join(path[0], f))]
     if isinstance(path, str):
         path = [path]
-    print("path= ", path)
+
     #dataset_lens = []
     #if 'train_file_lens_path' in kwargs and kwargs['train_file_lens_path'] is not None:
     #    path_lens = {}
@@ -173,6 +197,10 @@ def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=N
         random.shuffle(path)
         ds_iters = [binglr_iterator_dataset([p], run_once=True, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4) for p in path]
         ds = MyChainDataset(ds_iters)
+    elif ds_type.lower() == 'pretrain':
+        random.shuffle(path)
+        ds_iters = [bert_iterator_dataset([p], run_once=True, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4) for p in path]
+        ds = MyChainDataset0(ds_iters)
         #ds = binglr_iterator_dataset(path, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4)
     elif ds_type.lower() == 'gpt2':
         ds = GPT2Dataset(ds, max_seq_len=seq_length)

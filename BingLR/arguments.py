@@ -70,6 +70,8 @@ def add_model_config_args(parser):
                                    help='Use Torch Adam as optimizer on CPU.')
     group.add_argument('--num-urls', type=int, default=4,
                        help='number of urls in the listwise loss')
+    group.add_argument('--dataset-type', type=str, default='BERT',
+                       help='dataset type.')
     return parser
 
 

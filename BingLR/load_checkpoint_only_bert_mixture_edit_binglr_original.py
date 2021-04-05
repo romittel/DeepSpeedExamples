@@ -25,6 +25,7 @@ import math
 import numpy as np
 import torch
 import time
+import copy
 import deepspeed
 import deepspeed.utils.groups as groups
 
@@ -33,7 +34,7 @@ from configure_data import configure_data
 from fp16 import FP16_Module
 from fp16 import FP16_Optimizer
 from learning_rates import AnnealingLR
-from model import BertMixtureModel
+from model import BertMixtureModel, BertMixtureModel_v0
 from model import bert_get_params_for_weight_decay_optimization
 from model import PairwiseHRSLoss, PairwiseClickLoss
 if USE_TORCH_DDP:
@@ -55,11 +56,27 @@ from gpt2_data_loader import make_gpt2_dataloaders
 
 XDCG_DISCOUNT = 0.6
 
-def get_model(args):
+def get_model(args, version=None):
     """Build the model."""
     
     print_rank_0('building Bert model ...')
-    model = BertMixtureModel(num_layers=args.num_layers,
+    if version is None:
+        model = BertMixtureModel(num_layers=args.num_layers,
+                      vocab_size=args.vocab_size,
+                      hidden_size=args.hidden_size,
+                      num_attention_heads=args.num_attention_heads,
+                      embedding_dropout_prob=args.hidden_dropout,
+                      attention_dropout_prob=args.attention_dropout,
+                      output_dropout_prob=args.hidden_dropout,
+                      layernorm_epsilon=args.layernorm_epsilon,
+                      max_sequence_length=args.max_position_embeddings,
+                      checkpoint_activations=args.checkpoint_activations,
+                      checkpoint_num_layers=args.checkpoint_num_layers,
+                      parallel_output=True,
+                      num_experts=args.num_experts,
+                      type_vocab_size=2)
+    elif version == "v0":
+        model = BertMixtureModel_v0(num_layers=args.num_layers,
                       vocab_size=args.vocab_size,
                       hidden_size=args.hidden_size,
                       num_attention_heads=args.num_attention_heads,
@@ -167,10 +184,10 @@ def get_learning_rate_scheduler(optimizer, args):
     return lr_scheduler
 
 
-def setup_model_and_optimizer(args):
+def setup_model_and_optimizer(args, version=None):
     """Setup model and optimizer."""
 
-    model = get_model(args)
+    model = get_model(args, version)
     optimizer = get_optimizer(model, args)
     lr_scheduler = get_learning_rate_scheduler(optimizer, args)
 
@@ -598,9 +615,6 @@ def main():
 
     num_of_gpus = 8
     num_of_layers = 24
-    hp = 1024 // num_of_gpus
-    d_binglr = torch.load('/relevance2-nfs/romittel/binglr_pretrained_model/pytorch_model.bin')
-    emb_per_gpu = d_binglr['bert.embeddings.word_embeddings.weight'].size()[0] // num_of_gpus
     # Disable CuDNN.
     torch.backends.cudnn.enabled = False
 
@@ -615,9 +629,7 @@ def main():
     print("file_len= ", file_len)
     # Pytorch distributed.
     initialize_distributed(args)
-    if torch.distributed.get_rank() == 0:
-        print('Pretrain GPT2 model')
-        print_args(args)
+    
 
     # Random seeds for reproducability.
     set_random_seed(args.seed)
@@ -628,69 +640,54 @@ def main():
 
     # Model, optimizer, and learning rate.
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args)
+    args2 = copy.deepcopy(args)
+    args2.load = "/relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original/"
+    if torch.distributed.get_rank() == 0:
+        print('Pretrain GPT2 model')
+        print_args(args)
+        print_args(args2)
+    if torch.distributed.get_rank() == 0:
+        print("args.load=", args.load)
+        print("args2.load=", args2.load)
+    model2, optimizer2, lr_scheduler2 = setup_model_and_optimizer(args2)
     #model.optimizer.dynamic_loss_scale=True
     j = torch.distributed.get_rank()
     # word_embeddings
-    wts = model.module.module.module.word_embeddings.weight
-    num_embeddings_per_partition = model.module.module.module.word_embeddings.num_embeddings_per_partition
-    embedding_dim = model.module.module.module.word_embeddings.embedding_dim
-    model.module.module.module.word_embeddings.weight = torch.nn.Parameter(torch.cat((torch.tensor(d_binglr['bert.embeddings.word_embeddings.weight'][j * emb_per_gpu : (j + 1) * emb_per_gpu,:].clone().detach(), device=wts.device, dtype=wts.dtype), torch.zeros((num_embeddings_per_partition - emb_per_gpu, embedding_dim), device=wts.device, dtype=wts.dtype))), requires_grad=True)
+    model.module.module.module.word_embeddings.weight = copy.deepcopy(model2.module.module.module.word_embeddings.weight)
             
     # position_embeddings
-    wts = model.module.module.module.position_embeddings.weight
-    model.module.module.module.position_embeddings.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.embeddings.position_embeddings.weight'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
+    model.module.module.module.token_type_embeddings.weight = copy.deepcopy(model2.module.module.module.token_type_embeddings.weight)
+    model.module.module.module.position_embeddings.weight = copy.deepcopy(model2.module.module.module.position_embeddings.weight)
             
     # input_layernorm
-    wts = model.module.module.module.input_layernorm.weight
-    model.module.module.module.input_layernorm.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.embeddings.LayerNorm.weight'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-    wts = model.module.module.module.input_layernorm.bias
-    model.module.module.module.input_layernorm.bias = torch.nn.Parameter(torch.tensor(d_binglr['bert.embeddings.LayerNorm.bias'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-
+    model.module.module.module.input_layernorm.weight = copy.deepcopy(model2.module.module.module.input_layernorm.weight)
+    model.module.module.module.input_layernorm.bias = copy.deepcopy(model2.module.module.module.input_layernorm.bias)
     for i in range(num_of_layers):
         # attention.query_key_value.bias
-        query_weight = d_binglr['bert.encoder.layer.' + str(i) + '.attention.self.query.weight'].clone().detach() 
-        query_bias = d_binglr['bert.encoder.layer.' + str(i) + '.attention.self.query.bias'].clone().detach() 
-        key_weight = d_binglr['bert.encoder.layer.' + str(i) + '.attention.self.key.weight'].clone().detach() 
-        key_bias = d_binglr['bert.encoder.layer.' + str(i) + '.attention.self.key.bias'].clone().detach() 
-        value_weight = d_binglr['bert.encoder.layer.' + str(i) + '.attention.self.value.weight'].clone().detach() 
-        value_bias = d_binglr['bert.encoder.layer.' + str(i) + '.attention.self.value.bias'].clone().detach()
-        wts = model.module.module.module.transformer.layers[i].attention.query_key_value.weight
-        model.module.module.module.transformer.layers[i].attention.query_key_value.weight = torch.nn.Parameter(torch.cat((torch.tensor(query_weight[j * hp : (j+1) * hp,:], device=wts.device, dtype=wts.dtype), 
-            torch.tensor(key_weight[j * hp : (j+1) * hp,:], device=wts.device, dtype=wts.dtype), torch.tensor(value_weight[j * hp : (j+1) * hp,:], device=wts.device, dtype=wts.dtype))), requires_grad=True)
+        model.module.module.module.transformer.layers[i].attention.query_key_value.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].attention.query_key_value.weight)
 
-        wts = model.module.module.module.transformer.layers[i].attention.query_key_value.bias
-        model.module.module.module.transformer.layers[i].attention.query_key_value.bias = torch.nn.Parameter(torch.cat((torch.tensor(query_bias[j * hp : (j+1) * hp], device=wts.device, dtype=wts.dtype), 
-            torch.tensor(key_bias[j * hp : (j+1) * hp], device=wts.device, dtype=wts.dtype), torch.tensor(value_bias[j * hp : (j+1) * hp], device=wts.device, dtype=wts.dtype))), requires_grad=True)
-        
+        model.module.module.module.transformer.layers[i].attention.query_key_value.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].attention.query_key_value.bias)
+                
         # self_output.dense
-        wts = model.module.module.module.transformer.layers[i].self_output.dense.weight
-        model.module.module.module.transformer.layers[i].self_output.dense.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.attention.output.dense.weight'][:,j * hp : (j+1) * hp].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        wts = model.module.module.module.transformer.layers[i].self_output.dense.bias
-        model.module.module.module.transformer.layers[i].self_output.dense.bias = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.attention.output.dense.bias'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
+        model.module.module.module.transformer.layers[i].self_output.dense.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.dense.weight)
+        model.module.module.module.transformer.layers[i].self_output.dense.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.dense.bias)
                 
         #self_output.layernorm
-        wts = model.module.module.module.transformer.layers[i].self_output.layernorm.weight
-        model.module.module.module.transformer.layers[i].self_output.layernorm.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.attention.output.LayerNorm.weight'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        wts = model.module.module.module.transformer.layers[i].self_output.layernorm.bias
-        model.module.module.module.transformer.layers[i].self_output.layernorm.bias = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.attention.output.LayerNorm.bias'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-
+        model.module.module.module.transformer.layers[i].self_output.layernorm.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.layernorm.weight)
+        model.module.module.module.transformer.layers[i].self_output.layernorm.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.layernorm.bias)
+        
         #layernorm
-        wts = model.module.module.module.transformer.layers[i].layernorm.weight
-        model.module.module.module.transformer.layers[i].layernorm.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.output.LayerNorm.weight'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        wts = model.module.module.module.transformer.layers[i].layernorm.bias
-        model.module.module.module.transformer.layers[i].layernorm.bias = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.output.LayerNorm.bias'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        
-        wts = model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight
-        model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.intermediate.dense.weight'][j * hp * 4 : (j+1) * hp * 4,:].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        wts = model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias
-        model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.intermediate.dense.bias'][j * hp * 4 : (j+1) * hp * 4].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        
-        wts = model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight
-        model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.output.dense.weight'][:,j * hp * 4 : (j+1) * hp * 4].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
-        wts = model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias
-        model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias = torch.nn.Parameter(torch.tensor(d_binglr['bert.encoder.layer.' + str(i) + '.output.dense.bias'].clone().detach(), device=wts.device, dtype=wts.dtype), requires_grad=True)
+        model.module.module.module.transformer.layers[i].layernorm.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].layernorm.weight)
+        model.module.module.module.transformer.layers[i].layernorm.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].layernorm.bias)
+
+        # mlp
+        model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight)
+        model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias)
+
+        model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight)
+        model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias)
+
     iteration = 100
     save_checkpoint(iteration, model, optimizer, lr_scheduler, args)
-                
 if __name__ == "__main__":
     main()

@@ -378,8 +378,8 @@ def forward_step(data_iterator, model, args, timers):
         if moe_loss is not None:
             moe_losses.append(moe_loss)      
 
-    hrs_loss = PairwiseHRSLoss(hrs_scores.contiguous(), hrslabels.contiguous(), 4)
-    click_loss = PairwiseClickLoss(click_scores.contiguous(), clicklabels.contiguous(), 4)
+    hrs_loss = PairwiseHRSLoss(hrs_scores.contiguous(), hrslabels.contiguous(), args.num_urls)
+    click_loss = PairwiseClickLoss(click_scores.contiguous(), clicklabels.contiguous(), args.num_urls)
     
     #print(f"Moe Losses: {moe_losses}, actual loss {loss}")
     moe_loss = sum(moe_losses)
@@ -728,7 +728,7 @@ def get_train_val_test_data(args):
     # Data loader only on rank 0 of each model parallel group.
     if mpu.get_model_parallel_rank() == 0:
         data_config = configure_data()
-        data_config.set_defaults(data_set_type='BERT', transpose=False)
+        data_config.set_defaults(data_set_type=args.dataset_type, transpose=False)
         (train_data, val_data, test_data), tokenizer = data_config.apply(args)
         before = tokenizer.num_tokens
         after = before

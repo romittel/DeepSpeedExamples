@@ -728,7 +728,7 @@ def get_train_val_test_data(args):
     # Data loader only on rank 0 of each model parallel group.
     if mpu.get_model_parallel_rank() == 0:
         data_config = configure_data()
-        data_config.set_defaults(data_set_type='BERT', transpose=False)
+        data_config.set_defaults(data_set_type=args.dataset_type, transpose=False)
         (train_data, val_data, test_data), tokenizer = data_config.apply(args)
         before = tokenizer.num_tokens
         after = before
