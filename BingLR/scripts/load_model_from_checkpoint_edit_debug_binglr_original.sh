@@ -38,7 +38,7 @@ gpt_options=" \
        --log-interval 10 \
        --train-data /relevance2-nfs/local/users/xiaolhu/V3_attempt1 \
        --valid-data /relevance2-nfs/romittel/binglr_validation_data.json \
-       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original \
+       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original_copy \
        --tokenizer-path /relevance2-nfs/romittel/binglr_pretrained_model/ \
        --text-key docs \
        --label-key task_id \
@@ -48,8 +48,9 @@ gpt_options=" \
        --eval-interval 5000 \
        --eval-iters 100 \
        --num-urls 4 \
+       --load-module-strict true \
        --train-file-lens-path /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/file_lens.tsv \
-       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original
+       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original_copy
 "
 
 # Disable activation checkpointing
@@ -63,7 +64,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnccl.so.2.8.3 deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} load_checkpoint_only_bert_mixture.py $@ ${gpt_options}"
+run_cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnccl.so.2.8.3 deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} load_checkpoint_only_bert_mixture_edit_binglr_original.py $@ ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 
