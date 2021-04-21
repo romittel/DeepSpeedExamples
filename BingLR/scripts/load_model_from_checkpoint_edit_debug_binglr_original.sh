@@ -26,19 +26,19 @@ gpt_options=" \
        --mask-lm-prob 0.15 \
        --distributed-backend nccl \
        --lr 0.000015 \
-       --lr-decay-style cosine \
+       --lr-decay-style constant \
        --weight-decay 1e-2 \
        --clip-grad 1.0 \
-       --warmup .000000001 \
+       --warmup 0.0 \
        --init-method-std 0.001 \
        --fp16 \
        --num-workers 1 \
-       --num-experts 1 \
+       --num-experts 32 \
        --expert-parallel-size 1 \
        --log-interval 10 \
        --train-data /relevance2-nfs/local/users/xiaolhu/V3_attempt1 \
        --valid-data /relevance2-nfs/romittel/binglr_validation_data.json \
-       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original_copy \
+       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original \
        --tokenizer-path /relevance2-nfs/romittel/binglr_pretrained_model/ \
        --text-key docs \
        --label-key task_id \
@@ -50,7 +50,7 @@ gpt_options=" \
        --num-urls 4 \
        --load-module-strict true \
        --train-file-lens-path /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/file_lens.tsv \
-       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original_copy
+       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original
 "
 
 # Disable activation checkpointing
@@ -64,7 +64,7 @@ gpt_options="${gpt_options}
 "
 
 
-run_cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnccl.so.2.8.3 deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} load_checkpoint_only_bert_mixture_edit_binglr_original.py $@ ${gpt_options}"
+run_cmd="LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libnccl.so.2.8.3 deepspeed --num_nodes ${NUM_WORKERS} --num_gpus ${NUM_GPUS_PER_WORKER} load_checkpoint_only_bert_mixture.py $@ ${gpt_options}"
 echo ${run_cmd}
 eval ${run_cmd}
 

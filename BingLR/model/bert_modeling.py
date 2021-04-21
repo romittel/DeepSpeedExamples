@@ -19,7 +19,7 @@ import torch
 import torch.nn.functional as F
 import mpu
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
-from mpu.layers import ColumnParallelLinear
+from mpu.layers import ColumnParallelLinear, RowParallelLinear
 import torch.nn.init as init
 def init_method_normal(std=0.02):
     """Init method based on normal distribution.
@@ -82,13 +82,61 @@ class BertMixtureModel(torch.nn.Module):
 
         self.input_layernorm = LayerNorm(hidden_size, eps=layernorm_epsilon)
 
-        self.hrs_head = torch.nn.Linear(hidden_size, 1)
+        self.hrs_head = RowParallelLinear(
+            hidden_size,
+            1,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
 
         init_method(self.hrs_head.weight)
 
-        self.click_head = torch.nn.Linear(hidden_size, 1)
+        self.click_head = RowParallelLinear(
+            hidden_size,
+            1,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
 
         init_method(self.click_head.weight)
+
+        self.lpsat_head = RowParallelLinear(
+            hidden_size,
+            5,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
+
+        init_method(self.lpsat_head.weight)
+
+        self.qc_head = RowParallelLinear(
+            hidden_size,
+            5,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
+
+        init_method(self.qc_head.weight)
+
+        self.eff_head = RowParallelLinear(
+            hidden_size,
+            5,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
+
+        init_method(self.eff_head.weight)
+
+        self.local_head = RowParallelLinear(
+            hidden_size,
+            5,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
+
+        init_method(self.local_head.weight)
+
+        self.fresh_head = RowParallelLinear(
+            hidden_size,
+            5,
+            input_is_parallel=True,
+            init_method=init.xavier_normal_)
+
+        init_method(self.fresh_head.weight)
 
         # Transformer
         self.transformer = mpu.BertParallelTransformer(num_layers,
@@ -113,6 +161,26 @@ class BertMixtureModel(torch.nn.Module):
                                        init_method=init.xavier_normal_)
         
         
+        self.dense_lpsat0 = ColumnParallelLinear(hidden_size, hidden_size,
+                                                  gather_output=False,
+                                                  init_method=init.xavier_normal_)
+
+        self.dense_qc0 = ColumnParallelLinear(hidden_size, hidden_size,
+                                                  gather_output=False,
+                                                  init_method=init.xavier_normal_)
+
+        self.dense_eff0 = ColumnParallelLinear(hidden_size, hidden_size,
+                                                  gather_output=False,
+                                                  init_method=init.xavier_normal_)
+
+        self.dense_local0 = ColumnParallelLinear(hidden_size, hidden_size,
+                                                  gather_output=False,
+                                                  init_method=init.xavier_normal_)
+
+        self.dense_fresh0 = ColumnParallelLinear(hidden_size, hidden_size,
+                                                  gather_output=False,
+                                                  init_method=init.xavier_normal_)
+
     def forward(self, input_ids, position_ids, attention_mask, token_type_ids):
 
         # Embeddings.
@@ -140,13 +208,25 @@ class BertMixtureModel(torch.nn.Module):
         #click_scores = self.click_head(pooled_output)
         #############
         hrs_head0 = self.dense_hrs0(pooled_output)
-        hrs_head01 = mpu.gather_from_model_parallel_region(hrs_head0)
-        hrs_scores = self.hrs_head(torch.tanh(hrs_head01))
+        hrs_scores = self.hrs_head(torch.tanh(hrs_head0))
  
         click_head0 = self.dense_click0(pooled_output)
-        click_head01 = mpu.gather_from_model_parallel_region(click_head0)
-        click_scores = self.click_head(torch.tanh(click_head01))
+        click_scores = self.click_head(torch.tanh(click_head0))
 
+        lpsat_head0 = self.dense_hrs0(pooled_output)
+        lpsat_scores = self.hrs_head(torch.tanh(lpsat_head0))
+
+        qc_head0 = self.dense_hrs0(pooled_output)
+        qc_scores = self.hrs_head(torch.tanh(qc_head0))
+
+        eff_head0 = self.dense_hrs0(pooled_output)
+        eff_scores = self.hrs_head(torch.tanh(eff_head0))
+
+        local_head0 = self.dense_hrs0(pooled_output)
+        local_scores = self.hrs_head(torch.tanh(local_head0))
+
+        fresh_head0 = self.dense_hrs0(pooled_output)
+        fresh_scores = self.hrs_head(torch.tanh(fresh_head0))
         #############
         if self.parallel_output:
             return (logits_parallel, hrs_scores, click_scores, *moe_losses)

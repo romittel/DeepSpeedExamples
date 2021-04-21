@@ -35,6 +35,7 @@ gpt_options=" \
        --num-workers 1 \
        --num-experts 32 \
        --log-interval 10 \
+       --dataset-type bert \
        --train-data /relevance2-nfs/local/users/xiaolhu/V3_attempt1 \
        --valid-data /relevance2-nfs/romittel/validation_data_binglr_full_moe.tsv \
        --output-path /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/output_dir/moe_predictions.tsv \
@@ -48,7 +49,7 @@ gpt_options=" \
        --eval-iters 100 \
        --num-urls 1 \
        --train-file-lens-path /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/file_lens.tsv \
-       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr$
+       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_moe
 "
 
 # Disable activation checkpointing

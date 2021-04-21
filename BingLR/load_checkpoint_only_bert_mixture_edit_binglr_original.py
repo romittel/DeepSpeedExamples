@@ -210,6 +210,31 @@ def setup_model_and_optimizer(args, version=None):
 
     return model, optimizer, lr_scheduler
 
+def setup_model_and_optimizer2(args, version=None):
+    """Setup model and optimizer."""
+
+    model = get_model(args, version)
+    optimizer = get_optimizer(model, args)
+    lr_scheduler = get_learning_rate_scheduler(optimizer, args)
+
+    #if args.deepspeed:
+    #    print_rank_0("DeepSpeed is enabled.")
+
+    #    model, optimizer, _, lr_scheduler = deepspeed.initialize(
+    #        model=model,
+    #        optimizer=optimizer,
+    #        args=args,
+    #        lr_scheduler=lr_scheduler,
+    #        mpu=mpu,
+    #        dist_init_required=False
+    #    )
+    #    print(model)
+    #if args.load is not None:
+    #    args.iteration = load_checkpoint(model, optimizer, lr_scheduler, args)
+    #else:
+    #    args.iteration = 0
+
+    return model, optimizer, lr_scheduler
 
 def get_masks_and_position_ids(data,
                                eod_token,
@@ -639,7 +664,8 @@ def main():
         args.eod_token = get_train_val_test_data(args)
 
     # Model, optimizer, and learning rate.
-    model, optimizer, lr_scheduler = setup_model_and_optimizer(args)
+    model, optimizer, lr_scheduler = setup_model_and_optimizer2(args)
+    print("model= ", model)
     args2 = copy.deepcopy(args)
     args2.load = "/relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original/"
     if torch.distributed.get_rank() == 0:
@@ -653,40 +679,52 @@ def main():
     #model.optimizer.dynamic_loss_scale=True
     j = torch.distributed.get_rank()
     # word_embeddings
-    model.module.module.module.word_embeddings.weight = copy.deepcopy(model2.module.module.module.word_embeddings.weight)
+    model.module.module.word_embeddings.weight.data.copy_(model2.module.module.module.word_embeddings.weight.data)
             
     # position_embeddings
-    model.module.module.module.token_type_embeddings.weight = copy.deepcopy(model2.module.module.module.token_type_embeddings.weight)
-    model.module.module.module.position_embeddings.weight = copy.deepcopy(model2.module.module.module.position_embeddings.weight)
+    model.module.module.token_type_embeddings.weight.data.copy_(model2.module.module.module.token_type_embeddings.weight.data)
+    model.module.module.position_embeddings.weight.data.copy_(model2.module.module.module.position_embeddings.weight.data)
             
     # input_layernorm
-    model.module.module.module.input_layernorm.weight = copy.deepcopy(model2.module.module.module.input_layernorm.weight)
-    model.module.module.module.input_layernorm.bias = copy.deepcopy(model2.module.module.module.input_layernorm.bias)
+    model.module.module.input_layernorm.weight.data.copy_(model2.module.module.module.input_layernorm.weight.data)
+    model.module.module.input_layernorm.bias.data.copy_(model2.module.module.module.input_layernorm.bias.data)
     for i in range(num_of_layers):
         # attention.query_key_value.bias
-        model.module.module.module.transformer.layers[i].attention.query_key_value.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].attention.query_key_value.weight)
+        model.module.module.transformer.layers[i].attention.query_key_value.weight.data.copy_(model2.module.module.module.transformer.layers[i].attention.query_key_value.weight.data)
 
-        model.module.module.module.transformer.layers[i].attention.query_key_value.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].attention.query_key_value.bias)
+        model.module.module.transformer.layers[i].attention.query_key_value.bias.data.copy_(model2.module.module.module.transformer.layers[i].attention.query_key_value.bias.data)
                 
         # self_output.dense
-        model.module.module.module.transformer.layers[i].self_output.dense.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.dense.weight)
-        model.module.module.module.transformer.layers[i].self_output.dense.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.dense.bias)
+        model.module.module.transformer.layers[i].self_output.dense.weight.data.copy_(model2.module.module.module.transformer.layers[i].self_output.dense.weight.data)
+        model.module.module.transformer.layers[i].self_output.dense.bias.data.copy_(model2.module.module.module.transformer.layers[i].self_output.dense.bias.data)
                 
         #self_output.layernorm
-        model.module.module.module.transformer.layers[i].self_output.layernorm.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.layernorm.weight)
-        model.module.module.module.transformer.layers[i].self_output.layernorm.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].self_output.layernorm.bias)
+        model.module.module.transformer.layers[i].self_output.layernorm.weight.data.copy_(model2.module.module.module.transformer.layers[i].self_output.layernorm.weight.data)
+        model.module.module.transformer.layers[i].self_output.layernorm.bias.data.copy_(model2.module.module.module.transformer.layers[i].self_output.layernorm.bias.data)
         
         #layernorm
-        model.module.module.module.transformer.layers[i].layernorm.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].layernorm.weight)
-        model.module.module.module.transformer.layers[i].layernorm.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].layernorm.bias)
+        model.module.module.transformer.layers[i].layernorm.weight.data.copy_(model2.module.module.module.transformer.layers[i].layernorm.weight.data)
+        model.module.module.transformer.layers[i].layernorm.bias.data.copy_(model2.module.module.module.transformer.layers[i].layernorm.bias.data)
 
         # mlp
-        model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight)
-        model.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias)
+        model.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight.data.copy_(model2.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.weight.data)
+        model.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias.data.copy_(model2.module.module.module.transformer.layers[i].mlp.dense_h_to_4h.bias.data)
 
-        model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight)
-        model.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias = copy.deepcopy(model2.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias)
+        model.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight.data.copy_(model2.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.weight.data)
+        model.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias.data.copy_(model2.module.module.module.transformer.layers[i].mlp.dense_4h_to_h.bias.data)
 
+    if args.deepspeed:
+        print_rank_0("DeepSpeed is enabled.")
+        model, optimizer, _, lr_scheduler = deepspeed.initialize(
+            model=model,
+            optimizer=optimizer,
+            args=args,
+            lr_scheduler=lr_scheduler,
+            mpu=mpu,
+            dist_init_required=False
+        )
+        print("Optimizer's state_dict:")
+        print(optimizer.state_dict()['fp32_groups'])
     iteration = 100
     save_checkpoint(iteration, model, optimizer, lr_scheduler, args)
 if __name__ == "__main__":

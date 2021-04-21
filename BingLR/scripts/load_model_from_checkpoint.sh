@@ -38,7 +38,7 @@ gpt_options=" \
        --log-interval 10 \
        --train-data /relevance2-nfs/local/users/xiaolhu/V3_attempt1 \
        --valid-data /relevance2-nfs/romittel/binglr_validation_data.json \
-       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original \
+       --save /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original_copy2 \
        --tokenizer-path /relevance2-nfs/romittel/binglr_pretrained_model/ \
        --text-key docs \
        --label-key task_id \
@@ -49,7 +49,7 @@ gpt_options=" \
        --eval-iters 100 \
        --num-urls 4 \
        --train-file-lens-path /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/file_lens.tsv \
-       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original
+       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/backup_model_test_binglr_original_copy2
 "
 
 # Disable activation checkpointing
