@@ -782,9 +782,9 @@ class BertParallelTransformerLayer(torch.nn.Module):
         attention_self_output = self.self_output(attention_output_parallel,
                                                  hidden_states)
 
-        moe_loss = None
+        moe_loss = torch.tensor(0.0, device=attention_self_output.device, dtype=attention_self_output.dtype)
         if self.num_experts == 1:
-            moe_loss = torch.tensor(0.0, device=attention_self_output.device, dtype=attention_self_output.dtype)
+            mlp_output = self.mlp(attention_self_output)
         else:
             mlp_output, moe_loss = self.mlp(attention_self_output)
         #if torch.distributed.get_rank() == 0:
