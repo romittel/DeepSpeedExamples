@@ -127,7 +127,7 @@ def make_loaders(args):
         return make_tfrecord_loaders(args)
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
-    batch_size = args.batch_size // args.num_urls * world_size
+    batch_size = args.batch_size // args.num_urls# * world_size
     eval_batch_size = batch_size
     if args.eval_batch_size is not None:
         eval_batch_size = args.eval_batch_size * world_size
