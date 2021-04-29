@@ -15,7 +15,7 @@ gpt_options=" \
        --num-layers 24 \
        --hidden-size 1024 \
        --num-attention-heads 16 \
-       --batch-size 25 \
+       --batch-size 100 \
        --seq-length 128 \
        --max-position-embeddings 512 \
        --train-iters 10000000 \
