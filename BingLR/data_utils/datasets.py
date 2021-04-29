@@ -839,7 +839,7 @@ class binglr_dataset(data.IterableDataset):
                     all_mask_labels.append(mask_labels)
                     all_pad_mask.append(pad_mask)
 
-                sample = {'text': np.array(all_tokens), 'types': np.array(all_types), 'mask': np.array(all_mask), 'mask_labels': np.array(all_mask_labels), 'pad_mask': np.array(all_pad_mask), 'clickscores': np.array(clickscores), 'hrsscores': np.array(hrsscores)}
+                sample = {'text': np.reshape(np.array(all_tokens), [-1]), 'types': np.reshape(np.array(all_types), [-1]), 'mask': np.reshape(np.array(all_mask), [-1]), 'mask_labels': np.reshape(np.array(all_mask_labels), [-1]), 'pad_mask': np.reshape(np.array(all_pad_mask), [-1]), 'clickscores': np.reshape(np.array(clickscores), [-1]), 'hrsscores': np.reshape(np.array(hrsscores), [-1])}
                 yield sample
 
     def sentence_tokenize(self, sent, sentence_num=0, beginning=False, ending=False):
@@ -1311,10 +1311,7 @@ class bert_iterator_dataset(data.IterableDataset):
                     all_mask = []
                     all_mask_labels = []
                     all_pad_mask = []
-                    
                     ret = self.create_random_sentencepair(doc,self.num_urls, self.max_seq_len)
-                    
-                    
                     if ret is None:
                         #print("ret is None")
                         continue
@@ -1352,8 +1349,7 @@ class bert_iterator_dataset(data.IterableDataset):
 
     def sample_sentences(self, sentences, sequence_length):
         sentences_lens = [len(sent) for sent in sentences]
-        taken_branch = -1
-        
+
         if random.random() < 0.5 or sum(sentences_lens) < sequence_length or len(sentences) < 3:
             start_index = 0
             end_index = 1
@@ -1397,19 +1393,19 @@ class bert_iterator_dataset(data.IterableDataset):
         #harslabel_str = "hrslabel"
         if len(doc) < num_urls:
             return None
-        click_scores = [float(0) for _ in doc]
+        click_scores = [float(0) for d in doc]
         sorted_indices = np.argsort(np.array(click_scores))
         selected_indices = [sorted_indices[-1]]
         if num_urls > 1:
             selected_indices.extend(np.random.choice(sorted_indices[:-1], size=num_urls - 1, replace=False).tolist())
         doc = [doc[i] for i in selected_indices]
+
         a = []
         b = []
 
         sample_ids = []
         clickscores = []
         hrsscores = []
-        
         for d in doc:
             sentences = d['sentences']
             sentences = sentences.rstrip("]").lstrip("[").split("\",\"")
@@ -1422,10 +1418,11 @@ class bert_iterator_dataset(data.IterableDataset):
             sample_id = d['sample_id'] if 'sample_id' in d else "0"
             
             tokenized_sentences = []
+            
             for sent in sentences:
                 tokenized_sent, _ = self.sentence_tokenize(sent)
                 tokenized_sentences.append(tokenized_sent)
-             
+            
             tokens_a0, tokens_b = self.sample_sentences(tokenized_sentences, max_seq_len - 3)
             if len(tokens_a0) + len(tokens_b) == 0:
                 return None

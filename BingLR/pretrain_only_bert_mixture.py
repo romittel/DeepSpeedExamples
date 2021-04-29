@@ -27,6 +27,7 @@ import torch
 
 import deepspeed
 import deepspeed.utils.groups as groups
+
 from arguments import get_args
 from configure_data import configure_data
 from fp16 import FP16_Module
@@ -304,10 +305,8 @@ def get_batch(data_iterator, args, timers):
     shard reset mask of the same dimensions is also returned.
     '''
     # Items and their type.
-    keys = ['text', 'types', 'mask', 'mask_labels', 'pad_mask']
-    datatype = torch.int64
-    keys2 = ['clickscores', 'hrsscores']
-    datatype2 = torch.float64
+
+   
     # Broadcast data.
     timers('data loader').start()
     #if torch.distributed.get_rank() == 0:
@@ -316,6 +315,11 @@ def get_batch(data_iterator, args, timers):
         data = next(data_iterator)
     else:
         data = None
+    keys = ['text', 'types', 'mask', 'mask_labels', 'pad_mask']
+    keys2 = ['clickscores', 'hrsscores']
+
+    datatype = torch.int64    
+    datatype2 = torch.float64
     #if torch.distributed.get_rank() == 0:
     #    print("DDDDDDDDDDDDDDDDDDDDDDDDD")
     timers('data loader').stop()
@@ -325,21 +329,21 @@ def get_batch(data_iterator, args, timers):
     # Unpack.
 
     tokens = data_b['text'].long()
-    batch_size, num_urls, seq_length = tokens.size()
-    tokens = data_b['text'].view(-1, seq_length).long()
-    types = data_b['types'].view(-1, seq_length).long()
+    tokens = data_b['text'].long().contiguous().view(-1, args.seq_length)
+    types = data_b['types'].long().contiguous().view(-1, args.seq_length)
     #if torch.distributed.get_rank() == 0:
     #    print("tokens= ", tokens[0:4,:].detach().cpu().numpy())
-    loss_mask = data_b['mask'].view(-1, seq_length).float()
-    lm_labels = data_b['mask_labels'].view(-1, seq_length).long()
+    loss_mask = data_b['mask'].float().contiguous().view(-1, args.seq_length)
+    lm_labels = data_b['mask_labels'].long().contiguous().view(-1, args.seq_length)
     #if torch.distributed.get_rank() == 0:
     #    print("lm_labels= ", lm_labels[0:4,:].detach().cpu().numpy())
-    padding_mask = data_b['pad_mask'].view(-1, seq_length).float()
-    clickscores = data_b2['clickscores'].view(batch_size, num_urls).float()
-    hrsscores = data_b2['hrsscores'].view(batch_size, num_urls).float()
+    padding_mask = data_b['pad_mask'].float().contiguous().view(-1, args.seq_length)
+    clickscores = data_b2['clickscores'].float().contiguous().view(-1, args.num_urls)
+    hrsscores = data_b2['hrsscores'].float().contiguous().view(-1, args.num_urls)
     # Get the masks and postition ids.
     batch_size, seq_length = tokens.size()
-    attention_mask = (torch.ones_like(padding_mask, device=padding_mask.device) - padding_mask).view(batch_size, 1, seq_length, 1) * (torch.ones_like(padding_mask, device=padding_mask.device) - padding_mask).view(batch_size, 1, 1, seq_length)
+    
+    attention_mask = (torch.ones_like(padding_mask, device=padding_mask.device).contiguous() - padding_mask).view(batch_size, 1, seq_length, 1) * (torch.ones_like(padding_mask, device=padding_mask.device).contiguous() - padding_mask).view(batch_size, 1, 1, seq_length)
     position_ids = torch.arange(seq_length, dtype=torch.long, device=tokens.device)
     position_ids = position_ids.unsqueeze(0).expand_as(tokens)
     # Convert
@@ -385,7 +389,6 @@ def forward_step(data_iterator, model, args, timers):
     moe_loss = sum(moe_losses)
     #if torch.distributed.get_rank() == 0:
     #    print(f"Moe Loss {moe_loss}")
-    #    print(f"mlm Loss {loss}")
     loss = loss + moe_loss * 0.1 + hrs_loss + click_loss
     
     return loss,  hrs_scores, hrslabels, lm_loss, hrs_loss, click_loss
@@ -705,6 +708,7 @@ def initialize_distributed(args):
     # Set the model-parallel / data-parallel communicators.
     mpu.initialize_model_parallel(args.model_parallel_size)
     groups.initialize(ep_size=args.expert_parallel_size, mpu=mpu)
+
     # Optional DeepSpeed Activation Checkpointing Features
     #
     if args.deepspeed and args.deepspeed_activation_checkpointing:

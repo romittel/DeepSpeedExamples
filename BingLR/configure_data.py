@@ -53,7 +53,7 @@ def make_data_loader(dataset, batch_size, args):
     #    sampler = torch.utils.data.SequentialSampler(dataset)
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
-    #rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
+    rank = torch.distributed.get_rank(group=mpu.get_data_parallel_group())
     distributed = world_size > 1
     drop_last = distributed
 
@@ -73,12 +73,12 @@ def make_data_loader(dataset, batch_size, args):
     #                                          num_workers=args.num_workers,
     #                                          pin_memory=True)
     ###################
-    data_loader = torch.utils.data.DataLoader(dataset,
+    data_loader = torch.utils.data.DataLoader(dataset[rank] if len(dataset) == world_size else dataset[0],
                                               batch_size=batch_size,
                                               num_workers=args.num_workers,
                                               pin_memory=False,
                                               drop_last=drop_last,
-                                              timeout=10,
+                                              timeout=5,
                                               persistent_workers=True)
     return data_loader
 
@@ -127,8 +127,8 @@ def make_loaders(args):
         return make_tfrecord_loaders(args)
     world_size = torch.distributed.get_world_size(
         group=mpu.get_data_parallel_group())
-    batch_size = args.batch_size // args.num_urls# * world_size
-    eval_batch_size = batch_size
+    batch_size = args.batch_size #* world_size
+    eval_batch_size = args.batch_size #* world_size
     if args.eval_batch_size is not None:
         eval_batch_size = args.eval_batch_size * world_size
     seq_length = args.seq_length

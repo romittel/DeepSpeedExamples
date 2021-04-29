@@ -15,7 +15,7 @@ gpt_options=" \
        --num-layers 24 \
        --hidden-size 1024 \
        --num-attention-heads 16 \
-       --batch-size 100 \
+       --batch-size 25 \
        --seq-length 128 \
        --max-position-embeddings 512 \
        --train-iters 10000000 \
@@ -50,7 +50,7 @@ gpt_options=" \
        --eval-iters 100 \
        --num-urls 4 \
        --train-file-lens-path /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/file_lens.tsv \
-       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_binglr_original 
+       --load /relevance2-nfs/romittel/DeepSpeedExamples-amawa-moe/Megatron-LM-base-iterator/checkpoints_moe 
 "
 
 # Disable activation checkpointing

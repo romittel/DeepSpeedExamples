@@ -24,6 +24,8 @@ from . import corpora
 import subprocess
 import random
 import torch
+import mpu
+
 TRAIN_DATA = 0
 VAL_DATA = 1
 TEST_DATA = 2
@@ -95,9 +97,17 @@ class MyChainDataset(torch.utils.data.IterableDataset):
         return total
 
 class MyChainDataset0(torch.utils.data.IterableDataset):
+    r"""Dataset for chainning multiple :class:`IterableDataset` s.
+    This class is useful to assemble different existing dataset streams. The
+    chainning operation is done on-the-fly, so concatenating large-scale
+    datasets with this class will be efficient.
+    Args:
+        datasets (iterable of IterableDataset): datasets to be chained together
+    """
     def __init__(self, datasets: Iterable[torch.utils.data.Dataset]) -> None:
         super(MyChainDataset0, self).__init__()
         self.datasets = datasets
+
     def __iter__(self):
         for d in self.datasets:
             for x in d:
@@ -110,13 +120,15 @@ class MyChainDataset0(torch.utils.data.IterableDataset):
                         yield x
                 else:
                     break
+
+
     def __len__(self):
         total = 0
         for d in self.datasets:
             assert isinstance(d, torch.utils.data.IterableDataset), "ChainDataset only supports IterableDataset"
-            total += len(d) 
+            # Cannot verify that all self.datasets are Sized
+            total += len(d)  # type: ignore
         return total
-
 
 def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=None, split=[1.],
                 delim=',', loose=False, binarize_sent=False, drop_unlabeled=False, tokenizer=None,
@@ -149,10 +161,14 @@ def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=N
         return text
     # get one or multiple datasets and concatenate
 
+    world_size = torch.distributed.get_world_size(
+        group=mpu.get_data_parallel_group())
     if isinstance(path, list) and len(path) == 1 and os.path.isdir(path[0]):
         path = [os.path.join(path[0], f) for f in os.listdir(path[0]) if not os.path.isdir(os.path.join(path[0], f))]
+        random.shuffle(path)
+        path = [path[start::world_size] for start in range(min(world_size, len(path)))]
     if isinstance(path, str):
-        path = [path]
+        path = [[path] for _ in range(world_size)]
 
     #dataset_lens = []
     #if 'train_file_lens_path' in kwargs and kwargs['train_file_lens_path'] is not None:
@@ -193,14 +209,18 @@ def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=N
     #    elif ds_type.lower() == 'gpt2':
     #        ds = [GPT2Dataset(d, max_seq_len=seq_length) if d is not None else None for d in ds]
     #else:
+
     if ds_type.lower() == 'bert':
-        random.shuffle(path)
-        ds_iters = [binglr_iterator_dataset([p], run_once=True, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4) for p in path]
-        ds = MyChainDataset(ds_iters)
+        ds = []
+        print((len(path), world_size))
+        for i in range(min(world_size, len(path))):
+            ds_iters = [binglr_iterator_dataset([p], run_once=True, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4) for p in path[i]]
+            ds.append(MyChainDataset(ds_iters))
     elif ds_type.lower() == 'pretrain':
-        random.shuffle(path)
-        ds_iters = [bert_iterator_dataset([p], run_once=True, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4) for p in path]
-        ds = MyChainDataset0(ds_iters)
+        ds = []
+        for i in range(min(world_size, len(path))):
+            ds_iters = [bert_iterator_dataset([p], run_once=True, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 1) for p in path[i]]
+            ds.append(MyChainDataset0(ds_iters))
         #ds = binglr_iterator_dataset(path, max_seq_len=seq_length, mask_lm_prob=kwargs['mask_lm_prob'] if 'mask_lm_prob' in kwargs else 0.15, max_preds_per_seq=kwargs['max_preds_per_seq'] if 'max_preds_per_seq' in kwargs else 20, tokenizer=tokenizer, train=kwargs['train'] if 'train' in kwargs else False, num_urls=kwargs['num_urls'] if 'num_urls' in kwargs else 4)
     elif ds_type.lower() == 'gpt2':
         ds = GPT2Dataset(ds, max_seq_len=seq_length)
