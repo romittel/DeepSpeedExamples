@@ -80,7 +80,7 @@ class MyChainDataset(torch.utils.data.IterableDataset):
                 if x is not None:
                     flag = True
                     for k in x.keys():
-                        if len(x[k].shape) == 2 and x[k].shape[-1] != 128:
+                        if len(x[k].shape) == 1 and x[k].shape[0] == 0:
                             flag = False
                     if flag:
                         yield x
