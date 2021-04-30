@@ -167,9 +167,11 @@ def make_dataset(path, seq_length, text_key, label_key, lazy=False, process_fn=N
         path = [os.path.join(path[0], f) for f in os.listdir(path[0]) if not os.path.isdir(os.path.join(path[0], f))]
         random.shuffle(path)
         path = [path[start::world_size] for start in range(min(world_size, len(path)))]
-    if isinstance(path, str):
-        path = [[path] for _ in range(world_size)]
-
+    elif isinstance(path, str):
+        path = [[path]]
+    elif isinstance(path, list) and len(path) == 1:
+        path = [path]
+    #print("path= ", path)
     #dataset_lens = []
     #if 'train_file_lens_path' in kwargs and kwargs['train_file_lens_path'] is not None:
     #    path_lens = {}

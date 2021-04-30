@@ -324,7 +324,6 @@ def get_batch(data_iterator, args, timers):
     data_b2 = mpu.broadcast_data(keys2, data, datatype2)
 
     # Unpack.
-    tokens = data_b['text'].long()
     tokens = data_b['text'].long().contiguous().view(-1, args.seq_length)
     types = data_b['types'].long().contiguous().view(-1, args.seq_length)
     #if torch.distributed.get_rank() == 0:
@@ -338,7 +337,8 @@ def get_batch(data_iterator, args, timers):
     hrsscores = data_b2['hrsscores'].float().contiguous().view(-1, args.num_urls)
     # Get the masks and postition ids.
     batch_size, seq_length = tokens.size()
-    sample_id = data_b['sample_id'].long().contiguous().view(batch_size)
+    
+    sample_id = data_b['sample_id'].long().contiguous().view(batch_size,1)
     attention_mask = (torch.ones_like(padding_mask, device=padding_mask.device).contiguous() - padding_mask).view(batch_size, 1, seq_length, 1) * (torch.ones_like(padding_mask, device=padding_mask.device).contiguous() - padding_mask).view(batch_size, 1, 1, seq_length)
     position_ids = torch.arange(seq_length, dtype=torch.long, device=tokens.device)
     position_ids = position_ids.unsqueeze(0).expand_as(tokens)
@@ -366,6 +366,9 @@ def forward_step(data_iterator, model, args, timers):
     # Forward model.
     output, hrs_scores, click_scores, *other_losses = model(tokens, position_ids, attention_mask, types)
     #pooled_output = torch.squeeze(output[:,0,:])
+    #if torch.distributed.get_rank() == 0:
+    #    print("CCCCCCCCCCCCCCCCCCCCCCCCCC")
+
     loss = None
     lm_loss = None
     hrs_loss = None
@@ -468,7 +471,7 @@ def evaluate(data_iterator, model, args, timers, file_len, verbose=False):
         for _ in range(file_len):
         #while True:
             iteration += 1
-            if verbose and iteration % args.log_interval == 0:
+            if iteration % args.log_interval == 0:
                 print_rank_0('Evaluating iter {}/{}'.format(iteration, args.eval_iters))
             # Forward evaluation.
             _, hrs_scores, hrslabels, _, _, _, sample_id = forward_step(data_iterator, model, args, timers)
