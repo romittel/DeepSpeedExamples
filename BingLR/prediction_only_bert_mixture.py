@@ -317,7 +317,6 @@ def get_batch(data_iterator, args, timers):
         data = next(data_iterator)
     else:
         data = None
-
     #if torch.distributed.get_rank() == 0:
     #    print("DDDDDDDDDDDDDDDDDDDDDDDDD")
     timers('data loader').stop()
@@ -325,24 +324,22 @@ def get_batch(data_iterator, args, timers):
     data_b2 = mpu.broadcast_data(keys2, data, datatype2)
 
     # Unpack.
-
     tokens = data_b['text'].long()
-    batch_size, num_urls, seq_length = tokens.size()
-    tokens = data_b['text'].view(-1, seq_length).long()
-    types = data_b['types'].view(-1, seq_length).long()
+    tokens = data_b['text'].long().contiguous().view(-1, args.seq_length)
+    types = data_b['types'].long().contiguous().view(-1, args.seq_length)
     #if torch.distributed.get_rank() == 0:
     #    print("tokens= ", tokens[0:4,:].detach().cpu().numpy())
-    loss_mask = data_b['mask'].view(-1, seq_length).float()
-    lm_labels = data_b['mask_labels'].view(-1, seq_length).long()
+    loss_mask = data_b['mask'].float().contiguous().view(-1, args.seq_length)
+    lm_labels = data_b['mask_labels'].long().contiguous().view(-1, args.seq_length)
     #if torch.distributed.get_rank() == 0:
     #    print("lm_labels= ", lm_labels[0:4,:].detach().cpu().numpy())
-    padding_mask = data_b['pad_mask'].view(-1, seq_length).float()
-    clickscores = data_b2['clickscores'].view(batch_size, num_urls).float()
-    hrsscores = data_b2['hrsscores'].view(batch_size, num_urls).float()
-    sample_id = data_b['sample_id'].view(batch_size).long()
+    padding_mask = data_b['pad_mask'].float().contiguous().view(-1, args.seq_length)
+    clickscores = data_b2['clickscores'].float().contiguous().view(-1, args.num_urls)
+    hrsscores = data_b2['hrsscores'].float().contiguous().view(-1, args.num_urls)
     # Get the masks and postition ids.
     batch_size, seq_length = tokens.size()
-    attention_mask = (torch.ones_like(padding_mask, device=padding_mask.device) - padding_mask).view(batch_size, 1, seq_length, 1) * (torch.ones_like(padding_mask, device=padding_mask.device) - padding_mask).view(batch_size, 1, 1, seq_length)
+    sample_id = data_b['sample_id'].long().contiguous().view(batch_size)
+    attention_mask = (torch.ones_like(padding_mask, device=padding_mask.device).contiguous() - padding_mask).view(batch_size, 1, seq_length, 1) * (torch.ones_like(padding_mask, device=padding_mask.device).contiguous() - padding_mask).view(batch_size, 1, 1, seq_length)
     position_ids = torch.arange(seq_length, dtype=torch.long, device=tokens.device)
     position_ids = position_ids.unsqueeze(0).expand_as(tokens)
     # Convert
@@ -463,10 +460,9 @@ def evaluate(data_iterator, model, args, timers, file_len, verbose=False):
 
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    
-    fout = open(args.output_path, 'w', encoding="utf-8")
-    count = 0
-
+    if torch.distributed.get_rank() == 0:
+        fout = open(args.output_path, 'w', encoding="utf-8")
+        count = 0
     with torch.no_grad():
         iteration = 0
         for _ in range(file_len):
@@ -483,9 +479,9 @@ def evaluate(data_iterator, model, args, timers, file_len, verbose=False):
             if torch.distributed.get_rank() == 0:
                 if sample_id_value[0] != -1:
                     fout.write('\t'.join([str(sample_id_value[0]), str(hrslabels_value[0]), str(hrs_scores_value[0])]) + '\n')
-                    count += 1
-                    if count % 100 == 0:
-                        print("count= ", count)
+                count += 1
+                if count % 1000 == 0:
+                    time.sleep(1)
             '''when contiguous memory optimizations are enabled, the buffers
             allocated by the optimizations are deallocated during backward pass
             in the absence of backward pass the buffers should be reset after each
@@ -607,9 +603,7 @@ def main():
 
     # Arguments.
     args = get_args()
-    
     file_len = 0
-    print("args.valid_data= ", args.valid_data[0])
     for line in open(args.valid_data[0], 'r', encoding='utf-8'):
         file_len += 1
     print("file_len= ", file_len)
@@ -636,7 +630,7 @@ def main():
         val_data_iterator = None
 
      
-    #file_len = 200 
+    
     #TODO: figure out how to properly set this especially when resuming training
     evaluate(val_data_iterator, model, args, timers, file_len, verbose=False)
 
