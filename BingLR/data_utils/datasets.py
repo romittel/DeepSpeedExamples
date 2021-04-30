@@ -1087,7 +1087,7 @@ class binglr_iterator_dataset(data.IterableDataset):
                     if not flag_ret2:
                         break
             
-            sample = {'text': np.array(all_tokens), 'types': np.array(all_types), 'mask': np.array(all_mask), 'mask_labels': np.array(all_mask_labels), 'pad_mask': np.array(all_pad_mask), 'clickscores': np.array(clickscores), 'hrsscores': np.array(hrsscores), 'sample_id': np.array(sample_ids)}
+            sample = {'text': np.reshape(np.array(all_tokens), [-1]), 'types': np.reshape(np.array(all_types), [-1]), 'mask': np.reshape(np.array(all_mask), [-1]), 'mask_labels': np.reshape(np.array(all_mask_labels), [-1]), 'pad_mask': np.reshape(np.array(all_pad_mask), [-1]), 'clickscores': np.reshape(np.array(clickscores), [-1]), 'hrsscores': np.reshape(np.array(hrsscores), [-1]), 'sample_id': np.reshape(np.array(sample_ids), [-1])}
             counter += 1
             if counter % 5000 == 0:
                 time.sleep(1)
